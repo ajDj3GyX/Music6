@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>上传音乐 - 音乐分享站</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="icon" href="images/icon.png" type="image/png">
+    <script src="https://unpkg.com/confetti-js"></script>
+</head>
+<body>
+    <header>
+        <div class="logo-container">
+            <img src="images/logo.png" alt="音乐分享站">
+            <h1>音乐分享站</h1>
+        </div>
+        <nav>
+            <ul>
+                <li><a href="index.html"><i class="fas fa-home"></i> 首页</a></li>
+                <li><a href="upload.html" class="active"><i class="fas fa-cloud-upload-alt"></i> 上传音乐</a></li>
+            </ul>
+        </nav>
+    </header>
+    <main class="upload-container">
+        <h2><i class="fas fa-cloud-upload-alt"></i> 上传音乐</h2>
+        
+        <form id="upload-form">
+            <div class="form-group">
+                <label for="song-title"><i class="fas fa-heading"></i> 歌曲名称</label>
+                <input type="text" id="song-title" required placeholder="输入歌曲名称">
+            </div>
+            
+            <div class="form-group">
+                <label for="artist"><i class="fas fa-user"></i> 艺术家</label>
+                <input type="text" id="artist" required placeholder="输入艺术家名称">
+            </div>
+            
+            <div class="form-group">
+                <label for="music-file"><i class="fas fa-file-audio"></i> 选择音乐文件</label>
+                <input type="file" id="music-file" accept=".mp3,.flac,audio/*" required>
+                <p class="note">支持格式: MP3, FLAC | 大小限制: 1-100MB | 最多上传2首</p>
+            </div>
+            
+            <div class="preview-area" id="preview-area" style="display:none;">
+                <h3><i class="fas fa-headphones"></i> 音频预览</h3>
+                <audio id="preview-audio" controls style="width:100%; margin-top:12px;"></audio>
+            </div>
+            
+            <button type="submit" class="btn" id="upload-btn">
+                <i class="fas fa-upload"></i> 上传音乐
+            </button>
+        </form>
+        
+        <div class="upload-status" id="upload-status">
+            <!-- 上传状态信息会显示在这里 -->
+        </div>
+        
+        <div class="share-link" id="share-link-container" style="display:none;">
+            <h3><i class="fas fa-link"></i> 分享链接</h3>
+            <div class="link-box">
+                <input type="text" id="share-link" readonly>
+                <button id="copy-link"><i class="fas fa-copy"></i> 复制</button>
+            </div>
+            <p class="note">复制此链接分享给朋友，他们可以收听和下载你的音乐</p>
+        </div>
+    </main>
+    <footer>
+        <p>&copy; 2025 音乐分享站 | 用音乐连接你我</p>
+    </footer>
+    <script>
+        // Cloudinary配置
+        const CLOUD_NAME = 'dc5rhyjth';
+        const UPLOAD_PRESET = 'music_share';
+        const API_URL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`;
+        
+        // 文件预览
+        document.getElementById('music-file').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const previewArea = document.getElementById('preview-area');
+                const previewAudio = document.getElementById('preview-audio');
+                
+                // 显示预览区域
+                previewArea.style.display = 'block';
+                
+                // 创建对象URL并设置为音频源
+                const objectUrl = URL.createObjectURL(file);
+                previewAudio.src = objectUrl;
+            }
+        });
+        
+        // 上传表单处理
+        document.getElementById('upload-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const title = document.getElementById('song-title').value.trim();
+            const artist = document.getElementById('artist').value.trim();
+            const file = document.getElementById('music-file').files[0];
+            const uploadBtn = document.getElementById('upload-btn');
+            const statusDiv = document.getElementById('upload-status');
+            
+            // 重置状态
+            statusDiv.innerHTML = '';
+            
+            // 验证输入
+            if (!title || !artist) {
+                statusDiv.innerHTML = '<div class="error"><i class="fas fa-exclamation-circle"></i> 请填写歌曲名称和艺术家</div>';
+                return;
+            }
+            
+            if (!file) {
+                statusDiv.innerHTML = '<div class="error"><i class="fas fa-exclamation-circle"></i> 请选择音乐文件</div>';
+                return;
+            }
+            
+            // 检查文件类型
+            const validTypes = ['audio/mp3', 'audio/mpeg', 'audio/flac'];
+            if (!validTypes.includes(file.type) && !file.name.match(/\.(mp3|flac)$/i)) {
+                statusDiv.innerHTML = '<div class="error"><i class="fas fa-exclamation-circle"></i> 请选择有效的音频文件 (MP3/FLAC)</div>';
+                return;
+            }
+            
+            // 文件大小限制 (1-100MB)
+            const minSize = 1 * 1024 * 1024; // 1MB
+            const maxSize = 100 * 1024 * 1024; // 100MB
+            if (file.size < minSize || file.size > maxSize) {
+                statusDiv.innerHTML = `<div class="error"><i class="fas fa-exclamation-circle"></i> 文件大小必须在1MB到100MB之间 (当前: ${(file.size/(1024*1024)).toFixed(1)}MB)</div>`;
+                return;
+            }
+            
+            try {
+                uploadBtn.disabled = true;
+                uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 上传中...';
+                statusDiv.innerHTML = '<div class="info"><i class="fas fa-info-circle"></i> 开始上传...</div>';
+                
+                // 生成唯一文件名
+                const fileName = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+                
+                // 准备上传表单数据
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('upload_preset', UPLOAD_PRESET);
+                formData.append('cloud_name', CLOUD_NAME);
+                formData.append('tags', 'music_share');
+                
+                // 创建进度显示
+                const progressContainer = document.createElement('div');
+                progressContainer.className = 'progress-container';
+                progressContainer.innerHTML = '<div class="progress-bar"><div class="progress" id="upload-progress" style="width:0%"></div></div>';
+                statusDiv.appendChild(progressContainer);
+                
+                // 使用XMLHttpRequest上传以便跟踪进度
+                const xhr = new XMLHttpRequest();
+                
+                xhr.upload.addEventListener('progress', (e) => {
+                    if (e.lengthComputable) {
+                        const percent = Math.round((e.loaded / e.total) * 100);
+                        document.getElementById('upload-progress').style.width = `${percent}%`;
+                        statusDiv.innerHTML = `<div class="info"><i class="fas fa-info-circle"></i> 上传进度: ${percent}%</div>`;
+                        statusDiv.appendChild(progressContainer);
+                    }
+                });
+                
+                xhr.onreadystatechange = () => {
+                    if (xhr.readyState === 4) {
+                        if (xhr.status === 200) {
+                            const response = JSON.parse(xhr.responseText);
+                            
+                            // 创建音乐数据对象
+                            const musicData = {
+                                title,
+                                artist,
+                                fileName,
+                                url: response.secure_url,
+                                timestamp: Date.now()
+                            };
+                            
+                            // 创建音乐数组（最多2首）
+                            const musicList = [musicData];
+                            
+                            // 生成分享链接
+                            const encodedMusic = encodeURIComponent(JSON.stringify(musicList));
+                            const shareLink = `${window.location.origin}/index.html?music=${encodedMusic}`;
+                            
+                            document.getElementById('share-link').value = shareLink;
+                            document.getElementById('share-link-container').style.display = 'block';
+                            
+                            // 显示成功消息
+                            statusDiv.innerHTML = '<div class="success"><i class="fas fa-check-circle"></i> 上传成功! 复制下方链接分享给朋友</div>';
+                            uploadBtn.disabled = false;
+                            uploadBtn.innerHTML = '<i class="fas fa-upload"></i> 上传新歌曲';
+                            
+                            // 重置表单
+                            document.getElementById('upload-form').reset();
+                            document.getElementById('preview-area').style.display = 'none';
+                            
+                            // 庆祝效果
+                            const confettiSettings = { target: 'upload-status', max: 150 };
+                            const confetti = new ConfettiGenerator(confettiSettings);
+                            confetti.render();
+                            setTimeout(() => confetti.clear(), 3000);
+                        } else {
+                            let errorMessage = '上传失败';
+                            try {
+                                const errorResponse = JSON.parse(xhr.responseText);
+                                errorMessage = errorResponse.error.message || errorMessage;
+                            } catch (e) {
+                                console.error('解析错误响应失败', e);
+                            }
+                            statusDiv.innerHTML = `<div class="error"><i class="fas fa-exclamation-circle"></i> ${errorMessage}</div>`;
+                            uploadBtn.disabled = false;
+                            uploadBtn.innerHTML = '<i class="fas fa-upload"></i> 重新上传';
+                        }
+                    }
+                };
+                
+                xhr.open('POST', API_URL, true);
+                xhr.send(formData);
+                
+            } catch (error) {
+                console.error("上传错误:", error);
+                statusDiv.innerHTML = `<div class="error"><i class="fas fa-exclamation-circle"></i> 发生错误: ${error.message}</div>`;
+                uploadBtn.disabled = false;
+                uploadBtn.innerHTML = '<i class="fas fa-upload"></i> 重新上传';
+            }
+        });
+        
+        // 复制链接功能
+        document.getElementById('copy-link').addEventListener('click', () => {
+            const linkInput = document.getElementById('share-link');
+            linkInput.select();
+            linkInput.setSelectionRange(0, 99999);
+            
+            try {
+                navigator.clipboard.writeText(linkInput.value).then(() => {
+                    // 显示复制成功消息
+                    const statusDiv = document.getElementById('upload-status');
+                    statusDiv.innerHTML = '<div class="success"><i class="fas fa-check-circle"></i> 链接已复制到剪贴板!</div>';
+                    
+                    // 3秒后恢复原状态
+                    setTimeout(() => {
+                        if (document.getElementById('share-link-container').style.display === 'block') {
+                            statusDiv.innerHTML = '<div class="success"><i class="fas fa-check-circle"></i> 上传成功! 复制下方链接分享给朋友</div>';
+                        }
+                    }, 3000);
+                });
+            } catch (err) {
+                alert('复制失败，请手动复制链接');
+            }
+        });
+    </script>
+</body>
+</html>
